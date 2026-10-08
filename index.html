@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="擺盤教練">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#faf6f0">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
+<title>擺盤教練</title>
+<style>
+:root{--bg:#faf6f0;--card:#fff;--ink:#2b2622;--mute:#8a8178;--line:#ece4d8;--acc:#c8553d;--ok:#4f8a5b;--r:16px}
+@media (prefers-color-scheme:dark){:root{--bg:#1b1815;--card:#26221e;--ink:#f3ede4;--mute:#a39a8e;--line:#38322b;--acc:#e8795f;--ok:#7bbf88}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,"PingFang TC","Noto Sans TC",sans-serif;padding:env(safe-area-inset-top) 16px calc(32px + env(safe-area-inset-bottom))}
+main{max-width:560px;margin:0 auto}
+header{display:flex;justify-content:space-between;align-items:center;padding:18px 0 8px}
+h1{font-size:22px;margin:0;letter-spacing:.5px}
+h2{font-size:15px;margin:0 0 10px;color:var(--mute);font-weight:600}
+.tabs{display:flex;gap:6px}
+.tabs button{background:none;border:0;color:var(--mute);font:inherit;font-size:15px;padding:6px 10px;border-radius:99px}
+.tabs button.on{background:var(--ink);color:var(--bg)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:12px 0}
+.drop{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px 16px;text-align:center;color:var(--mute)}
+.btn{display:inline-block;background:var(--acc);color:#fff;border:0;border-radius:var(--r);padding:13px 20px;font:inherit;font-weight:600;width:100%;text-align:center}
+.btn.ghost{background:none;color:var(--acc);border:1px solid var(--acc)}
+.row{display:flex;gap:10px}.row>*{flex:1}
+input[type=file]{display:none}
+#preview{width:100%;border-radius:var(--r);display:block;max-height:60vh;object-fit:cover}
+.score{display:flex;align-items:baseline;gap:8px}
+.score b{font-size:56px;line-height:1;color:var(--acc)}
+.score span{color:var(--mute)}
+.bar{margin:10px 0}.bar .t{display:flex;justify-content:space-between;font-size:14px}
+.bar .tr{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin-top:4px}
+.bar .tr i{display:block;height:100%;background:var(--acc);border-radius:99px;transition:width .6s}
+ul{padding-left:20px;margin:6px 0}li{margin:6px 0}
+.good li::marker{color:var(--ok)}.fix li::marker{color:var(--acc)}
+.pal{display:flex;gap:6px;margin-top:8px}.pal i{flex:1;height:26px;border-radius:8px;border:1px solid var(--line)}
+input[type=password],input[type=text],select{width:100%;padding:11px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;margin:6px 0}
+.hist{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hist figure{margin:0;position:relative}.hist img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px}
+.hist figcaption{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.65);color:#fff;border-radius:99px;padding:1px 9px;font-size:13px}
+.hide{display:none}.small{font-size:13px;color:var(--mute)}
+.spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:s 1s linear infinite;margin:auto}
+@keyframes s{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>擺盤教練</h1>
+<nav class="tabs"><button id="t1" class="on">評鑑</button><button id="t2">紀錄</button><button id="t3">設定</button></nav></header>
+
+<section id="v1">
+  <div class="card drop" id="pick">
+    <div style="font-size:42px">🍽️</div>
+    <div>拍一張你的擺盤,從正上方或 45 度角拍效果最好</div>
+    <label class="btn">拍照<input id="cam" type="file" accept="image/*" capture="environment"></label>
+    <label class="btn ghost">從相簿選<input id="lib" type="file" accept="image/*"></label>
+  </div>
+  <div id="result" class="hide">
+    <img id="preview" alt="">
+    <div class="card"><div class="score"><b id="total">0</b><span>/ 100 · <em id="grade"></em></span></div>
+      <div id="bars"></div><div class="pal" id="pal"></div></div>
+    <div class="card good"><h2>做得好的地方</h2><ul id="good"></ul></div>
+    <div class="card fix"><h2>下次可以這樣改</h2><ul id="fix"></ul></div>
+    <div class="card hide" id="aiCard"><h2>AI 主廚點評</h2><div id="ai"></div></div>
+    <div class="row"><button class="btn ghost" id="again">再評一張</button><button class="btn" id="aiBtn">AI 深度點評</button></div>
+    <p class="small" id="aiHint"></p>
+  </div>
+</section>
+
+<section id="v2" class="hide"><div class="card"><h2>進步曲線</h2><canvas id="chart" height="120" style="width:100%"></canvas></div><div class="hist" id="hist"></div><p class="small" id="empty">還沒有紀錄,先去評一張吧。</p></section>
+
+<section id="v3" class="hide">
+  <div class="card"><h2>AI 點評(選填)</h2>
+    <p class="small">貼上 Anthropic API key 後,可讓 AI 看照片給更細的建議。key 只存在這支手機的瀏覽器,不會上傳到其他地方。沒設定也能用手機端評分。</p>
+    <input type="password" id="key" placeholder="sk-ant-..." autocomplete="off">
+    <select id="style"><option value="warm">風格:溫柔鼓勵</option><option value="strict">風格:嚴格主廚</option></select>
+    <button class="btn" id="save">儲存</button></div>
+  <div class="card"><h2>怎麼拍才準</h2><ul><li>盤子放中間,自然光,避免黃色燈光</li><li>背景乾淨,不要有雜物搶畫面</li><li>手機端評分是看構圖與色彩,不是看味道</li></ul></div>
+  <button class="btn ghost" id="clr">清除所有紀錄</button>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const S={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+let cur=null;
+
+['t1','t2','t3'].forEach((t,i)=>$(t).onclick=()=>{['t1','t2','t3'].forEach((x,j)=>{$(x).classList.toggle('on',i==j);$('v'+(j+1)).classList.toggle('hide',i!=j)});if(i==1)renderHist()});
+
+function load(file){return new Promise(res=>{const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>res(im);im.src=r.result};r.readAsDataURL(file)})}
+function draw(im,max){const s=Math.min(1,max/Math.max(im.width,im.height));const c=document.createElement('canvas');c.width=Math.round(im.width*s);c.height=Math.round(im.height*s);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c}
+function rgb2hsv(r,g,b){r/=255;g/=255;b/=255;const m=Math.max(r,g,b),n=Math.min(r,g,b),d=m-n;let h=0;if(d){if(m==r)h=((g-b)/d)%6;else if(m==g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360}return[h,m?d/m:0,m]}
+const clamp=(x,a=0,b=100)=>Math.max(a,Math.min(b,x));
+
+function analyze(im){
+  const W=160,H=160,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
+  // 取中間正方形
+  const s=Math.min(im.width,im.height);x.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,W,H);
+  const d=x.getImageData(0,0,W,H).data,L=new Float32Array(W*H);
+  const hue=new Array(12).fill(0);let satN=0,sumL=0,mx=0,my=0,mw=0,quant={};
+  for(let i=0;i<W*H;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2];L[i]=.299*r+.587*g+.114*b;sumL+=L[i];
+    const[h,sa,v]=rgb2hsv(r,g,b);if(sa>.25&&v>.2){hue[Math.floor(h/30)%12]++;satN++}
+    const k=(r>>5)+','+(g>>5)+','+(b>>5);quant[k]=(quant[k]||0)+1}
+  const mean=sumL/(W*H);let v=0;for(const l of L)v+=(l-mean)**2;const sd=Math.sqrt(v/(W*H));
+  // 邊緣強度(細節)
+  const E=new Float32Array(W*H);let eSum=0;
+  for(let y=1;y<H-1;y++)for(let xx=1;xx<W-1;xx++){const i=y*W+xx;const gx=L[i+1]-L[i-1],gy=L[i+W]-L[i-W];const e=Math.hypot(gx,gy);E[i]=e;eSum+=e}
+  // 食物質量 = 邊緣+飽和度加權
+  for(let i=0;i<W*H;i++){const[,sa]=rgb2hsv(d[i*4],d[i*4+1],d[i*4+2]);const w=(E[i]>18?1:0)+(sa>.35?1:0);if(w){const X=i%W,Y=(i/W)|0;mx+=X*w;my+=Y*w;mw+=w}}
+  const cx=mw?mx/mw:W/2,cy=mw?my/mw:H/2;
+  const off=Math.hypot(cx-W/2,cy-H/2)/(W/2); // 0 中心
+  // 留白:中央圓內平坦像素比例
+  let flat=0,tot=0;for(let y=0;y<H;y++)for(let xx=0;xx<W;xx++){if(Math.hypot(xx-W/2,y-H/2)<W*.42){tot++;if(E[y*W+xx]<8)flat++}}
+  const space=flat/tot;
+  const hueBins=hue.filter(n=>n>satN*.03&&n>8).length;
+  // 調色盤
+  const pal=Object.entries(quant).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>{const[r,g,b]=k.split(',').map(n=>n*32+16);return`rgb(${r},${g},${b})`});
+  // 分數
+  const color=clamp(10+hueBins*20+(satN/(W*H))*25);
+  const contrast=clamp(sd*1.6);
+  const balance=clamp(100-off*140);
+  const whitespace=clamp(100-Math.max(0,Math.abs(space-.58)-.12)*230);
+  const detail=clamp((eSum/(W*H))*5);
+  const dims={color,contrast,balance,whitespace,detail};
+  const total=Math.round(color*.25+contrast*.15+balance*.25+whitespace*.2+detail*.15);
+  return{dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/(W*H)}};
+}
+const NAMES={color:'色彩豐富',contrast:'明暗對比',balance:'重心平衡',whitespace:'留白呼吸',detail:'細節層次'};
+function advice(a){
+  const good=[],fix=[],m=a.m,d=a.dims;
+  if(d.color>=70)good.push('色彩有層次,看起來有食慾');else fix.push(m.hueBins<=1?'顏色太單一:加一點對比色,例如綠葉香草、紅色小番茄、檸檬皮、彩椒粉':'再多一點點鮮明的點綴色,但控制在 3 種主色內');
+  if(d.contrast>=65)good.push('明暗對比清楚,主角突出');else fix.push(m.mean>170?'整體偏亮偏平:用深色盤或加深色醬汁讓主角跳出來':m.mean<80?'整體偏暗:拍照時補光,或換淺色盤':'食物和盤子顏色太接近:換對比色的盤,或加醬汁/粉末做出邊界');
+  if(d.balance>=70)good.push('重心接近盤中,穩定好看');else fix.push(m.off>.35?'食物擠在盤的一邊:用「黃金比例」把主角放在盤的 1/3 位置,配菜在對角呼應':'重心略偏,試著把主菜微調向盤心');
+  if(d.whitespace>=70)good.push('留白拿捏得不錯,盤面不擁擠');else fix.push(m.space<.25?'盤面太滿:拿掉 1–2 樣配料,留出盤緣 2–3 公分的呼吸空間':'留白過多顯得空:把食材集中靠攏,或加一道醬汁弧線填補');
+  if(d.detail>=60)good.push('有質感細節(醬汁、紋理、堆疊)');else fix.push('缺少層次:試著做出高度(堆疊、斜靠),並用醬汁畫線或點狀、撒少量脆片/香草做質感');
+  if(!good.length)good.push('你已經踏出第一步了,每次拍下來比較就會進步');
+  fix.push('通則:奇數擺放(3 或 5 個)比偶數自然;盤緣乾淨,用濕布擦掉滴到的醬汁');
+  return{good,fix};
+}
+const grade=t=>t>=85?'餐廳等級':t>=70?'很不錯':t>=55?'有潛力':'再練練';
+
+function show(a,src){
+  $('pick').classList.add('hide');$('result').classList.remove('hide');$('preview').src=src;
+  $('total').textContent=a.total;$('grade').textContent=grade(a.total);
+  $('bars').innerHTML=Object.entries(a.dims).map(([k,v])=>`<div class="bar"><div class="t"><span>${NAMES[k]}</span><span>${v}</span></div><div class="tr"><i style="width:${v}%"></i></div></div>`).join('');
+  $('pal').innerHTML=a.pal.map(c=>`<i style="background:${c}"></i>`).join('');
+  const ad=advice(a);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
+  $('aiCard').classList.add('hide');$('ai').textContent='';
+  $('aiHint').textContent=S.get('key','')?'':'想要更細的點評?到「設定」貼上 API key。';
+  window.scrollTo(0,0);
+}
+async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im);const big=draw(im,1024),thumb=draw(im,240);
+  cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
+  const h=S.get('hist',[]);h.push({t:Date.now(),s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
+$('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.target.files[0]);
+$('again').onclick=()=>{$('result').classList.add('hide');$('pick').classList.remove('hide');$('cam').value='';$('lib').value=''};
+
+$('aiBtn').onclick=async()=>{
+  const key=S.get('key','');if(!key){$('t3').click();return}
+  if(!cur)return;$('aiCard').classList.remove('hide');$('ai').innerHTML='<div class="spin"></div>';
+  const tone=S.get('style','warm')=='strict'?'嚴格直接的米其林主廚,指出問題但給具體改法':'溫柔鼓勵的料理老師,先肯定再給具體改法';
+  try{
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-sonnet-5-5',max_tokens:900,messages:[{role:'user',content:[
+        {type:'image',source:{type:'base64',media_type:'image/jpeg',data:cur.img.split(',')[1]}},
+        {type:'text',text:`你是${tone}。請用繁體中文評鑑這張擺盤照片(若不是食物請直說)。格式:\n1. 一句總評\n2. 三項優點\n3. 三項最值得改的地方,每項附「下次具體怎麼做」\n4. 給初學者的一個小挑戰練習\n手機端分析參考(可忽略):總分${cur.a.total},${Object.entries(cur.a.dims).map(([k,v])=>NAMES[k]+v).join('、')}。簡潔,不超過 350 字。`}]}]})});
+    const j=await r.json();if(!r.ok)throw new Error(j.error?.message||r.status);
+    $('ai').innerHTML=j.content.map(c=>c.text||'').join('').split('\n').map(l=>l.trim()?`<p style="margin:6px 0">${l.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</p>`:'').join('');
+  }catch(e){$('ai').textContent='AI 點評失敗:'+e.message+'(檢查 key 與網路)'}
+};
+
+function renderHist(){const h=S.get('hist',[]);$('empty').classList.toggle('hide',!!h.length);
+  $('hist').innerHTML=h.slice().reverse().map(x=>`<figure><img src="${x.th}"><figcaption>${x.s}</figcaption></figure>`).join('');
+  const c=$('chart'),w=c.width=c.clientWidth*2,ht=c.height=240,g=c.getContext('2d');g.clearRect(0,0,w,ht);
+  if(h.length<2)return;const st=getComputedStyle(document.documentElement);g.strokeStyle=st.getPropertyValue('--acc');g.lineWidth=4;g.beginPath();
+  h.forEach((p,i)=>{const X=20+i*(w-40)/(h.length-1),Y=ht-20-(p.s/100)*(ht-40);i?g.lineTo(X,Y):g.moveTo(X,Y)});g.stroke();}
+$('save').onclick=()=>{const k=$('key').value.trim();if(k)S.set('key',k);S.set('style',$('style').value);$('save').textContent='已儲存 ✓';setTimeout(()=>$('save').textContent='儲存',1500)};
+$('clr').onclick=()=>{if(confirm('確定清除所有紀錄?')){S.set('hist',[]);renderHist()}};
+$('style').value=S.get('style','warm');if(S.get('key',''))$('key').placeholder='已儲存(重填可更換)';
+if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
