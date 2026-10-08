@@ -111,9 +111,9 @@ function analyze(im,cat){const P=CATS[cat]||CATS.other;
   // 取中間正方形
   const s=Math.min(im.width,im.height);x.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,W,H);
   const d=x.getImageData(0,0,W,H).data,L=new Float32Array(W*H);
-  const hue=new Array(12).fill(0);let satN=0,sumL=0,mx=0,my=0,mw=0,quant={},dark=0,brown=0,bright=0;
+  const hue=new Array(12).fill(0);let satN=0,sumL=0,mx=0,my=0,mw=0,quant={},dark=0,brown=0,bright=0,skin=0;
   for(let i=0;i<W*H;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2];L[i]=.299*r+.587*g+.114*b;sumL+=L[i];
-    const[h,sa,v]=rgb2hsv(r,g,b);const isBrown=h>=8&&h<=50&&sa>.2&&v<.7;if(v<.22)dark++;if(v>.92&&sa<.12)bright++;if(isBrown)brown++;if(sa>.25&&v>.2&&!isBrown){hue[Math.floor(h/30)%12]++;satN++}
+    const[h,sa,v]=rgb2hsv(r,g,b);const isBrown=h>=8&&h<=50&&sa>.2&&v<.7;if(v<.22)dark++;if(v>.92&&sa<.12)bright++;if(isBrown)brown++;{const cb=128-.168736*r-.331264*g+.5*b,cr=128+.5*r-.418688*g-.081312*b;if(cb>=77&&cb<=127&&cr>=133&&cr<=173&&sa>=.15&&sa<=.6&&v>=.35&&r>g&&g>b)skin++}if(sa>.25&&v>.2&&!isBrown){hue[Math.floor(h/30)%12]++;satN++}
     const k=(r>>5)+','+(g>>5)+','+(b>>5);quant[k]=(quant[k]||0)+1}
   const mean=sumL/(W*H);let v=0;for(const l of L)v+=(l-mean)**2;const sd=Math.sqrt(v/(W*H));
   // 邊緣強度(細節)
@@ -141,8 +141,8 @@ function analyze(im,cat){const P=CATS[cat]||CATS.other;
   const dims={color,contrast,balance,whitespace,detail,clean};
   const w=P.w,raw=color*w.color+contrast*w.contrast+balance*w.balance+whitespace*w.whitespace+detail*w.detail+clean*w.clean;
   // 嚴格曲線 + 整潔度太低時封頂,避免亂的盤子拿高分
-  let total=Math.round(100*Math.pow(raw/100,1.5));if(clean<50)total=Math.min(total,Math.round(30+clean*.6));
-  return{cat,dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/N,darkF,brownF,brightF,edgeAvg}};
+  let total=Math.round(100*Math.pow(raw/100,1.5));if(clean<50)total=Math.min(total,Math.round(30+clean*.6));const skinF=skin/(W*H),notFood=skinF>.5;if(notFood)total=Math.min(total,12);
+  return{cat,notFood,dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/N,darkF,brownF,brightF,edgeAvg}};
 }
 const NAMES={color:'色彩豐富',contrast:'明暗對比',balance:'重心平衡',whitespace:'留白呼吸',detail:'細節層次',clean:'整潔乾淨'};
 function advice(a){
@@ -157,21 +157,21 @@ function advice(a){
   fix.push('通則:奇數擺放(3 或 5 個)比偶數自然;盤緣乾淨,用濕布擦掉滴到的醬汁');
   return{good,fix};
 }
-const grade=t=>t>=85?'餐廳等級':t>=72?'很不錯':t>=58?'有潛力':t>=40?'再練練':'需要重擺';
+const grade=(t,nf)=>nf?'不像食物':t>=85?'餐廳等級':t>=72?'很不錯':t>=58?'有潛力':t>=40?'再練練':'需要重擺';
 
 function show(a,src){
   $('pick').classList.add('hide');$('result').classList.remove('hide');$('preview').src=src;
-  $('total').textContent=a.total;$('grade').textContent=grade(a.total);$('catn').textContent=(CATS[a.cat]||CATS.other).n;
+  $('total').textContent=a.total;$('grade').textContent=grade(a.total,a.notFood);$('catn').textContent=(CATS[a.cat]||CATS.other).n;
   $('bars').innerHTML=Object.entries(a.dims).map(([k,v])=>`<div class="bar"><div class="t"><span>${NAMES[k]}</span><span>${v}</span></div><div class="tr"><i style="width:${v}%"></i></div></div>`).join('');
   $('pal').innerHTML=a.pal.map(c=>`<i style="background:${c}"></i>`).join('');
-  const ad=advice(a);const ct=CATS[a.cat];if(ct&&ct.tip)ad.fix.push(ct.tip);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
+  const ad=advice(a);if(a.notFood){ad.good=['這張看起來是人像/膚色佔大部分,不是餐點,所以不評分'];ad.fix=['請拍盤中的食物(俯拍或 45 度),讓食物佔畫面主要部分'];}const ct=CATS[a.cat];if(ct&&ct.tip)ad.fix.push(ct.tip);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
   $('aiCard').classList.add('hide');$('ai').textContent='';
   $('aiHint').textContent=S.get('key','')?'':'想要更細的點評?到「設定」貼上 API key。';
   window.scrollTo(0,0);
 }
 async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const big=draw(im,1024),thumb=draw(im,240);
   cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
-  const h=S.get('hist',[]);h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
+  const h=S.get('hist',[]);if(!a.notFood)h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
 $('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.target.files[0]);
 $('again').onclick=()=>{$('result').classList.add('hide');$('pick').classList.remove('hide');$('cam').value='';$('lib').value=''};
 
@@ -203,4 +203,5 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(
 </script>
 </body>
 </html>
+
 
