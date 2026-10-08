@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
@@ -101,9 +101,9 @@ function analyze(im){
   // 取中間正方形
   const s=Math.min(im.width,im.height);x.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,W,H);
   const d=x.getImageData(0,0,W,H).data,L=new Float32Array(W*H);
-  const hue=new Array(12).fill(0);let satN=0,sumL=0,mx=0,my=0,mw=0,quant={};
+  const hue=new Array(12).fill(0);let satN=0,sumL=0,mx=0,my=0,mw=0,quant={},dark=0,brown=0,bright=0;
   for(let i=0;i<W*H;i++){const r=d[i*4],g=d[i*4+1],b=d[i*4+2];L[i]=.299*r+.587*g+.114*b;sumL+=L[i];
-    const[h,sa,v]=rgb2hsv(r,g,b);if(sa>.25&&v>.2){hue[Math.floor(h/30)%12]++;satN++}
+    const[h,sa,v]=rgb2hsv(r,g,b);const isBrown=h>=8&&h<=50&&sa>.2&&v<.7;if(v<.22)dark++;if(v>.92&&sa<.12)bright++;if(isBrown)brown++;if(sa>.25&&v>.2&&!isBrown){hue[Math.floor(h/30)%12]++;satN++}
     const k=(r>>5)+','+(g>>5)+','+(b>>5);quant[k]=(quant[k]||0)+1}
   const mean=sumL/(W*H);let v=0;for(const l of L)v+=(l-mean)**2;const sd=Math.sqrt(v/(W*H));
   // 邊緣強度(細節)
@@ -120,16 +120,21 @@ function analyze(im){
   // 調色盤
   const pal=Object.entries(quant).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k])=>{const[r,g,b]=k.split(',').map(n=>n*32+16);return`rgb(${r},${g},${b})`});
   // 分數
-  const color=clamp(10+hueBins*20+(satN/(W*H))*25);
+  const N=W*H,darkF=dark/N,brownF=brown/N,brightF=bright/N,edgeAvg=eSum/N;
+  const color=clamp(5+hueBins*22+(satN/N)*30);
   const contrast=clamp(sd*1.6);
   const balance=clamp(100-off*140);
   const whitespace=clamp(100-Math.max(0,Math.abs(space-.58)-.12)*230);
   const detail=clamp((eSum/(W*H))*5);
-  const dims={color,contrast,balance,whitespace,detail};
-  const total=Math.round(color*.25+contrast*.15+balance*.25+whitespace*.2+detail*.15);
-  return{dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/(W*H)}};
+  // 整潔度:全棕色/焦黑/過曝/雜亂邊緣都扣分
+  const clean=clamp(100-Math.max(0,brownF-.3)*160-Math.max(0,darkF-.1)*220-Math.max(0,brightF-.35)*120-Math.max(0,edgeAvg-22)*4);
+  const dims={color,contrast,balance,whitespace,detail,clean};
+  const raw=color*.2+contrast*.12+balance*.2+whitespace*.18+detail*.1+clean*.2;
+  // 嚴格曲線 + 整潔度太低時封頂,避免亂的盤子拿高分
+  let total=Math.round(100*Math.pow(raw/100,1.5));if(clean<50)total=Math.min(total,Math.round(30+clean*.6));
+  return{dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/N,darkF,brownF,brightF,edgeAvg}};
 }
-const NAMES={color:'色彩豐富',contrast:'明暗對比',balance:'重心平衡',whitespace:'留白呼吸',detail:'細節層次'};
+const NAMES={color:'色彩豐富',contrast:'明暗對比',balance:'重心平衡',whitespace:'留白呼吸',detail:'細節層次',clean:'整潔乾淨'};
 function advice(a){
   const good=[],fix=[],m=a.m,d=a.dims;
   if(d.color>=70)good.push('色彩有層次,看起來有食慾');else fix.push(m.hueBins<=1?'顏色太單一:加一點對比色,例如綠葉香草、紅色小番茄、檸檬皮、彩椒粉':'再多一點點鮮明的點綴色,但控制在 3 種主色內');
@@ -137,11 +142,12 @@ function advice(a){
   if(d.balance>=70)good.push('重心接近盤中,穩定好看');else fix.push(m.off>.35?'食物擠在盤的一邊:用「黃金比例」把主角放在盤的 1/3 位置,配菜在對角呼應':'重心略偏,試著把主菜微調向盤心');
   if(d.whitespace>=70)good.push('留白拿捏得不錯,盤面不擁擠');else fix.push(m.space<.25?'盤面太滿:拿掉 1–2 樣配料,留出盤緣 2–3 公分的呼吸空間':'留白過多顯得空:把食材集中靠攏,或加一道醬汁弧線填補');
   if(d.detail>=60)good.push('有質感細節(醬汁、紋理、堆疊)');else fix.push('缺少層次:試著做出高度(堆疊、斜靠),並用醬汁畫線或點狀、撒少量脆片/香草做質感');
+  if(d.clean>=70)good.push('盤面乾淨,食物清楚好辨認');else fix.push('盤面看起來髒亂或一片棕黑:擦乾淨盤緣、清掉焦黑與殘渣,食物量少而整齊,並加綠色或亮色點綴');
   if(!good.length)good.push('你已經踏出第一步了,每次拍下來比較就會進步');
   fix.push('通則:奇數擺放(3 或 5 個)比偶數自然;盤緣乾淨,用濕布擦掉滴到的醬汁');
   return{good,fix};
 }
-const grade=t=>t>=85?'餐廳等級':t>=70?'很不錯':t>=55?'有潛力':'再練練';
+const grade=t=>t>=85?'餐廳等級':t>=72?'很不錯':t>=58?'有潛力':t>=40?'再練練':'需要重擺';
 
 function show(a,src){
   $('pick').classList.add('hide');$('result').classList.remove('hide');$('preview').src=src;
