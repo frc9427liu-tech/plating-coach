@@ -186,9 +186,15 @@ $('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.tar
 $('again').onclick=()=>{$('result').classList.add('hide');$('pick').classList.remove('hide');$('cam').value='';$('lib').value=''};
 
 $('aiBtn').onclick=async()=>{
-  const key=S.get('key','');if(!key){$('t3').click();return}
+  let key=S.get('key','');const gk=S.get('gkey','')||(key&&!key.startsWith('sk-ant')?key:'');if(!key&&!gk){$('t3').click();return}
   if(!cur)return;$('aiCard').classList.remove('hide');$('ai').innerHTML='<div class="spin"></div>';
   const tone=S.get('style','warm')=='strict'?'嚴格直接的米其林主廚,指出問題但給具體改法':'溫柔鼓勵的料理老師,先肯定再給具體改法';
+  const esc=t=>t.split('\n').map(l=>l.trim()?`<p style="margin:6px 0">${l.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</p>`:'').join('');
+  if(gk){try{
+    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':gk},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:cur.img.split(',')[1]}},{text:`你是${tone}。請用繁體中文評鑑這張擺盤照片(若不是食物請直說)。格式:\n1. 一句總評\n2. 三項優點\n3. 三項最值得改的地方,每項附「下次具體怎麼做」\n4. 給初學者的一個小挑戰練習\n簡潔,不超過 350 字,不要用 markdown 符號。`}]}]})});
+    const j=await r.json();if(!r.ok)throw new Error(j.error?.message||r.status);
+    $('ai').innerHTML=esc(j.candidates[0].content.parts.map(p=>p.text||'').join(''));return
+  }catch(e){$('ai').textContent='AI 點評失敗:'+e.message+'(檢查 Gemini key 與網路)';return}}
   try{
     const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
       body:JSON.stringify({model:'claude-sonnet-5-5',max_tokens:900,messages:[{role:'user',content:[
