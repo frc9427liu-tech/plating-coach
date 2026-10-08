@@ -80,7 +80,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
   <div class="card"><h2>AI 點評(選填)</h2>
     <p class="small">貼上 Anthropic API key 後,可讓 AI 看照片給更細的建議。key 只存在這支手機的瀏覽器,不會上傳到其他地方。沒設定也能用手機端評分。</p>
     <input type="password" id="key" placeholder="sk-ant-..." autocomplete="off">
-    <select id="style"><option value="warm">風格:溫柔鼓勵</option><option value="strict">風格:嚴格主廚</option></select>
+    <input type="password" id="gkey" placeholder="Gemini key(免費,AIza...)" autocomplete="off" style="margin-top:8px"><select id="style"><option value="warm">風格:溫柔鼓勵</option><option value="strict">風格:嚴格主廚</option></select>
     <button class="btn" id="save">儲存</button></div>
   <div class="card"><h2>怎麼拍才準</h2><ul><li>盤子放中間,自然光,避免黃色燈光</li><li>背景乾淨,不要有雜物搶畫面</li><li>手機端評分是看構圖與色彩,不是看味道</li></ul></div>
   <button class="btn ghost" id="clr">清除所有紀錄</button>
@@ -165,7 +165,7 @@ function show(a,src){
   $('bars').innerHTML=Object.entries(a.dims).map(([k,v])=>`<div class="bar"><div class="t"><span>${NAMES[k]}</span><span>${v}</span></div><div class="tr"><i style="width:${v}%"></i></div></div>`).join('');
   $('pal').innerHTML=a.pal.map(c=>`<i style="background:${c}"></i>`).join('');
   const ad=advice(a);if(a.notFood){ad.good=['這張看起來不是餐點(人像或其他物品),所以不評分'];ad.fix=['請拍盤中的食物(俯拍或 45 度),讓食物佔畫面主要部分'];}const ct=CATS[a.cat];if(ct&&ct.tip)ad.fix.push(ct.tip);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
-  $('aiCard').classList.add('hide');$('ai').textContent='';
+  $('aiCard').classList.add('hide');$('ai').textContent='';if(a.gem&&a.gem.comment){$('aiCard').classList.remove('hide');$('ai').textContent='Gemini:'+a.gem.comment}
   $('aiHint').textContent=S.get('key','')?'':'想要更細的點評?到「設定」貼上 API key。';
   window.scrollTo(0,0);
 }
@@ -175,7 +175,11 @@ function loadScript(u){return new Promise((ok,no)=>{const s=document.createEleme
 async function foodProb(im){try{
   if(!_mn){await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js');_mn=await mobilenet.load({version:2,alpha:1.0})}
   const c=draw(im,224);const p=tf.tidy(()=>tf.softmax(_mn.infer(c,false)).dataSync());
-  let s=0;for(let i=923;i<=969;i++)s+=p[i];for(const i of [809,659,567,504,849,899,720,813])s+=p[i];return s}catch(e){return null}}async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}const big=draw(im,1024),thumb=draw(im,240);
+  let s=0;for(let i=923;i<=969;i++)s+=p[i];for(const i of [809,659,567,504,849,899,720,813])s+=p[i];return s}catch(e){return null}}// Gemini 免費額度:判斷是否為食物+分類+一句點評;無 key 或失敗回傳 null
+async function gemCheck(im){const k=S.get('gkey','');if(!k)return null;try{
+  const b64=draw(im,512).toDataURL('image/jpeg',.7).split(',')[1];
+  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':k},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:'判斷這張照片是否為一盤/一份料理或飲品(人臉、人像、風景、物品都不是)。回 JSON:{"isFood":布林,"category":"main|dessert|salad|rice|drink|other","comment":"繁體中文,60 字內,指出擺盤最大優點與一個具體改法;不是食物就說明照片是什麼"}'}]}],generationConfig:{responseMimeType:'application/json'}})});
+  const j=await r.json();if(!r.ok)return null;return JSON.parse(j.candidates[0].content.parts[0].text)}catch(e){return null}}async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const g=await gemCheck(im);let fp=null;if(g){a.gem=g;if(g.isFood===false){a.notFood=true;a.total=Math.min(a.total,12)}}else{fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}}const big=draw(im,1024),thumb=draw(im,240);
   cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
   const h=S.get('hist',[]);if(!a.notFood)h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
 $('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.target.files[0]);
@@ -200,7 +204,7 @@ function renderHist(){const h=S.get('hist',[]);$('empty').classList.toggle('hide
   const c=$('chart'),w=c.width=c.clientWidth*2,ht=c.height=240,g=c.getContext('2d');g.clearRect(0,0,w,ht);
   if(h.length<2)return;const st=getComputedStyle(document.documentElement);g.strokeStyle=st.getPropertyValue('--acc');g.lineWidth=4;g.beginPath();
   h.forEach((p,i)=>{const X=20+i*(w-40)/(h.length-1),Y=ht-20-(p.s/100)*(ht-40);i?g.lineTo(X,Y):g.moveTo(X,Y)});g.stroke();}
-$('save').onclick=()=>{const k=$('key').value.trim();if(k)S.set('key',k);S.set('style',$('style').value);$('save').textContent='已儲存 ✓';setTimeout(()=>$('save').textContent='儲存',1500)};
+$('save').onclick=()=>{const k=$('key').value.trim();if(k)S.set('key',k);const gk=$('gkey').value.trim();if(gk)S.set('gkey',gk);S.set('style',$('style').value);$('save').textContent='已儲存 ✓';setTimeout(()=>$('save').textContent='儲存',1500)};
 $('clr').onclick=()=>{if(confirm('確定清除所有紀錄?')){S.set('hist',[]);renderHist()}};
 $('style').value=S.get('style','warm');if(S.get('key',''))$('key').placeholder='已儲存(重填可更換)';
 function renderChips(){$('chips').innerHTML=Object.entries(CATS).map(([k,v])=>`<button class="${k==CAT?'on':''}" data-k="${k}">${v.n}</button>`).join('');$('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>{CAT=b.dataset.k;S.set('cat',CAT);renderChips()})}
@@ -209,6 +213,8 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(
 </script>
 </body>
 </html>
+
+
 
 
 
