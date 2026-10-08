@@ -164,12 +164,18 @@ function show(a,src){
   $('total').textContent=a.total;$('grade').textContent=grade(a.total,a.notFood);$('catn').textContent=(CATS[a.cat]||CATS.other).n;
   $('bars').innerHTML=Object.entries(a.dims).map(([k,v])=>`<div class="bar"><div class="t"><span>${NAMES[k]}</span><span>${v}</span></div><div class="tr"><i style="width:${v}%"></i></div></div>`).join('');
   $('pal').innerHTML=a.pal.map(c=>`<i style="background:${c}"></i>`).join('');
-  const ad=advice(a);if(a.notFood){ad.good=['這張看起來是人像/膚色佔大部分,不是餐點,所以不評分'];ad.fix=['請拍盤中的食物(俯拍或 45 度),讓食物佔畫面主要部分'];}const ct=CATS[a.cat];if(ct&&ct.tip)ad.fix.push(ct.tip);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
+  const ad=advice(a);if(a.notFood){ad.good=['這張看起來不是餐點(人像或其他物品),所以不評分'];ad.fix=['請拍盤中的食物(俯拍或 45 度),讓食物佔畫面主要部分'];}const ct=CATS[a.cat];if(ct&&ct.tip)ad.fix.push(ct.tip);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
   $('aiCard').classList.add('hide');$('ai').textContent='';
   $('aiHint').textContent=S.get('key','')?'':'想要更細的點評?到「設定」貼上 API key。';
   window.scrollTo(0,0);
 }
-async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const big=draw(im,1024),thumb=draw(im,240);
+let _mn=null;
+function loadScript(u){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
+// 免費的本機 AI(MobileNet):ImageNet 食物相關類別機率總和,載入失敗回傳 null
+async function foodProb(im){try{
+  if(!_mn){await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js');_mn=await mobilenet.load({version:2,alpha:1.0})}
+  const c=draw(im,224);const p=tf.tidy(()=>tf.softmax(_mn.infer(c,false)).dataSync());
+  let s=0;for(let i=923;i<=969;i++)s+=p[i];for(const i of [809,659,567,504,849,899,720,813])s+=p[i];return s}catch(e){return null}}async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}const big=draw(im,1024),thumb=draw(im,240);
   cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
   const h=S.get('hist',[]);if(!a.notFood)h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
 $('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.target.files[0]);
@@ -203,5 +209,7 @@ if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(
 </script>
 </body>
 </html>
+
+
 
 
