@@ -43,6 +43,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
 .hist{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .hist figure{margin:0;position:relative}.hist img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px}
 .hist figcaption{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.65);color:#fff;border-radius:99px;padding:1px 9px;font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}.chips button{border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:15px;padding:7px 14px;border-radius:99px}.chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
 .hide{display:none}.small{font-size:13px;color:var(--mute)}
 .spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:s 1s linear infinite;margin:auto}
 @keyframes s{to{transform:rotate(360deg)}}
@@ -54,6 +55,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
 <nav class="tabs"><button id="t1" class="on">評鑑</button><button id="t2">紀錄</button><button id="t3">設定</button></nav></header>
 
 <section id="v1">
+  <div class="card"><h2>這是什麼料理?(不同料理評分標準不同)</h2><div class="chips" id="chips"></div></div>
   <div class="card drop" id="pick">
     <div style="font-size:42px">🍽️</div>
     <div>拍一張你的擺盤,從正上方或 45 度角拍效果最好</div>
@@ -62,7 +64,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
   </div>
   <div id="result" class="hide">
     <img id="preview" alt="">
-    <div class="card"><div class="score"><b id="total">0</b><span>/ 100 · <em id="grade"></em></span></div>
+    <div class="card"><div class="score"><b id="total">0</b><span>/ 100 · <em id="grade"></em> · <em id="catn"></em></span></div>
       <div id="bars"></div><div class="pal" id="pal"></div></div>
     <div class="card good"><h2>做得好的地方</h2><ul id="good"></ul></div>
     <div class="card fix"><h2>下次可以這樣改</h2><ul id="fix"></ul></div>
@@ -87,7 +89,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
 <script>
 const $=id=>document.getElementById(id);
 const S={get(k,d){try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let cur=null;
+let cur=null,CAT=S.get('cat','main');
 
 ['t1','t2','t3'].forEach((t,i)=>$(t).onclick=()=>{['t1','t2','t3'].forEach((x,j)=>{$(x).classList.toggle('on',i==j);$('v'+(j+1)).classList.toggle('hide',i!=j)});if(i==1)renderHist()});
 
@@ -96,7 +98,15 @@ function draw(im,max){const s=Math.min(1,max/Math.max(im.width,im.height));const
 function rgb2hsv(r,g,b){r/=255;g/=255;b/=255;const m=Math.max(r,g,b),n=Math.min(r,g,b),d=m-n;let h=0;if(d){if(m==r)h=((g-b)/d)%6;else if(m==g)h=(b-r)/d+2;else h=(r-g)/d+4;h*=60;if(h<0)h+=360}return[h,m?d/m:0,m]}
 const clamp=(x,a=0,b=100)=>Math.max(a,Math.min(b,x));
 
-function analyze(im){
+const CATS={
+  main:{n:'主餐',w:{color:.2,contrast:.12,balance:.2,whitespace:.18,detail:.1,clean:.2},sp:.5,bt:.3,tip:'主餐:主角(肉/魚)放在盤的 1/3 處,澱粉與配菜分區,醬汁畫在盤面而不是淹過主角'},
+  dessert:{n:'甜點',w:{color:.24,contrast:.1,balance:.2,whitespace:.2,detail:.1,clean:.16},sp:.62,bt:.45,tip:'甜點:留白要多一點,用莓果/薄荷/糖粉做小點綴,盤緣乾淨最加分'},
+  salad:{n:'沙拉輕食',w:{color:.3,contrast:.1,balance:.18,whitespace:.12,detail:.15,clean:.15},sp:.35,bt:.25,tip:'沙拉輕食:顏色越多越好,葉菜堆出高度,醬汁放旁邊或淋細線'},
+  rice:{n:'麵飯',w:{color:.2,contrast:.1,balance:.26,whitespace:.12,detail:.12,clean:.2},sp:.32,bt:.35,tip:'麵飯:用夾子捲成小塔或堆成丘,碗緣擦乾淨,頂端放一個亮色點綴'},
+  drink:{n:'飲品',w:{color:.2,contrast:.2,balance:.26,whitespace:.14,detail:.05,clean:.15},sp:.7,bt:.4,tip:'飲品:杯子放正中,背景簡單,用冰塊/切片水果/吸管做一個視覺焦點'},
+  other:{n:'其他',w:{color:.2,contrast:.12,balance:.2,whitespace:.18,detail:.1,clean:.2},sp:.55,bt:.3,tip:''}
+};
+function analyze(im,cat){const P=CATS[cat]||CATS.other;
   const W=160,H=160,c=document.createElement('canvas');c.width=W;c.height=H;const x=c.getContext('2d');
   // 取中間正方形
   const s=Math.min(im.width,im.height);x.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,W,H);
@@ -124,15 +134,15 @@ function analyze(im){
   const color=clamp(5+hueBins*22+(satN/N)*30);
   const contrast=clamp(sd*1.6);
   const balance=clamp(100-off*140);
-  const whitespace=clamp(100-Math.max(0,Math.abs(space-.58)-.12)*230);
+  const whitespace=clamp(100-Math.max(0,Math.abs(space-P.sp)-.12)*230);
   const detail=clamp((eSum/(W*H))*5);
   // 整潔度:全棕色/焦黑/過曝/雜亂邊緣都扣分
-  const clean=clamp(100-Math.max(0,brownF-.3)*160-Math.max(0,darkF-.1)*220-Math.max(0,brightF-.35)*120-Math.max(0,edgeAvg-22)*4);
+  const clean=clamp(100-Math.max(0,brownF-P.bt)*160-Math.max(0,darkF-.1)*220-Math.max(0,brightF-.35)*120-Math.max(0,edgeAvg-22)*4);
   const dims={color,contrast,balance,whitespace,detail,clean};
-  const raw=color*.2+contrast*.12+balance*.2+whitespace*.18+detail*.1+clean*.2;
+  const w=P.w,raw=color*w.color+contrast*w.contrast+balance*w.balance+whitespace*w.whitespace+detail*w.detail+clean*w.clean;
   // 嚴格曲線 + 整潔度太低時封頂,避免亂的盤子拿高分
   let total=Math.round(100*Math.pow(raw/100,1.5));if(clean<50)total=Math.min(total,Math.round(30+clean*.6));
-  return{dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/N,darkF,brownF,brightF,edgeAvg}};
+  return{cat,dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/N,darkF,brownF,brightF,edgeAvg}};
 }
 const NAMES={color:'色彩豐富',contrast:'明暗對比',balance:'重心平衡',whitespace:'留白呼吸',detail:'細節層次',clean:'整潔乾淨'};
 function advice(a){
@@ -151,17 +161,17 @@ const grade=t=>t>=85?'餐廳等級':t>=72?'很不錯':t>=58?'有潛力':t>=40?'�
 
 function show(a,src){
   $('pick').classList.add('hide');$('result').classList.remove('hide');$('preview').src=src;
-  $('total').textContent=a.total;$('grade').textContent=grade(a.total);
+  $('total').textContent=a.total;$('grade').textContent=grade(a.total);$('catn').textContent=(CATS[a.cat]||CATS.other).n;
   $('bars').innerHTML=Object.entries(a.dims).map(([k,v])=>`<div class="bar"><div class="t"><span>${NAMES[k]}</span><span>${v}</span></div><div class="tr"><i style="width:${v}%"></i></div></div>`).join('');
   $('pal').innerHTML=a.pal.map(c=>`<i style="background:${c}"></i>`).join('');
-  const ad=advice(a);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
+  const ad=advice(a);const ct=CATS[a.cat];if(ct&&ct.tip)ad.fix.push(ct.tip);$('good').innerHTML=ad.good.map(t=>`<li>${t}</li>`).join('');$('fix').innerHTML=ad.fix.map(t=>`<li>${t}</li>`).join('');
   $('aiCard').classList.add('hide');$('ai').textContent='';
   $('aiHint').textContent=S.get('key','')?'':'想要更細的點評?到「設定」貼上 API key。';
   window.scrollTo(0,0);
 }
-async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im);const big=draw(im,1024),thumb=draw(im,240);
+async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const big=draw(im,1024),thumb=draw(im,240);
   cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
-  const h=S.get('hist',[]);h.push({t:Date.now(),s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
+  const h=S.get('hist',[]);h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
 $('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.target.files[0]);
 $('again').onclick=()=>{$('result').classList.add('hide');$('pick').classList.remove('hide');$('cam').value='';$('lib').value=''};
 
@@ -180,13 +190,15 @@ $('aiBtn').onclick=async()=>{
 };
 
 function renderHist(){const h=S.get('hist',[]);$('empty').classList.toggle('hide',!!h.length);
-  $('hist').innerHTML=h.slice().reverse().map(x=>`<figure><img src="${x.th}"><figcaption>${x.s}</figcaption></figure>`).join('');
+  $('hist').innerHTML=h.slice().reverse().map(x=>`<figure><img src="${x.th}"><figcaption>${(CATS[x.c]||{n:''}).n} ${x.s}</figcaption></figure>`).join('');
   const c=$('chart'),w=c.width=c.clientWidth*2,ht=c.height=240,g=c.getContext('2d');g.clearRect(0,0,w,ht);
   if(h.length<2)return;const st=getComputedStyle(document.documentElement);g.strokeStyle=st.getPropertyValue('--acc');g.lineWidth=4;g.beginPath();
   h.forEach((p,i)=>{const X=20+i*(w-40)/(h.length-1),Y=ht-20-(p.s/100)*(ht-40);i?g.lineTo(X,Y):g.moveTo(X,Y)});g.stroke();}
 $('save').onclick=()=>{const k=$('key').value.trim();if(k)S.set('key',k);S.set('style',$('style').value);$('save').textContent='已儲存 ✓';setTimeout(()=>$('save').textContent='儲存',1500)};
 $('clr').onclick=()=>{if(confirm('確定清除所有紀錄?')){S.set('hist',[]);renderHist()}};
 $('style').value=S.get('style','warm');if(S.get('key',''))$('key').placeholder='已儲存(重填可更換)';
+function renderChips(){$('chips').innerHTML=Object.entries(CATS).map(([k,v])=>`<button class="${k==CAT?'on':''}" data-k="${k}">${v.n}</button>`).join('');$('chips').querySelectorAll('button').forEach(b=>b.onclick=()=>{CAT=b.dataset.k;S.set('cat',CAT);renderChips()})}
+renderChips();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
