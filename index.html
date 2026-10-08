@@ -44,7 +44,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
 .hist figure{margin:0;position:relative}.hist img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:12px}
 .hist figcaption{position:absolute;right:6px;bottom:6px;background:rgba(0,0,0,.65);color:#fff;border-radius:99px;padding:1px 9px;font-size:13px}
 .chips{display:flex;flex-wrap:wrap;gap:8px}.chips button{border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-size:15px;padding:7px 14px;border-radius:99px}.chips button.on{background:var(--acc);border-color:var(--acc);color:#fff}
-.hide{display:none}.small{font-size:13px;color:var(--mute)}
+.hide{display:none}#busy:not(.hide){display:flex}.small{font-size:13px;color:var(--mute)}
 .spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:s 1s linear infinite;margin:auto}
 @keyframes s{to{transform:rotate(360deg)}}
 </style>
@@ -56,6 +56,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
 
 <section id="v1">
   <div class="card"><h2>這是什麼料理?(不同料理評分標準不同)</h2><div class="chips" id="chips"></div></div>
+  <div id="busy" class="hide" style="position:fixed;inset:0;z-index:99;background:rgba(250,246,240,.88);flex-direction:column;align-items:center;justify-content:center;gap:14px"><div class="spin" style="margin:0;width:44px;height:44px;border-width:5px"></div><div style="font-weight:600">正在分析照片…第一次會多等幾秒</div></div>
   <div class="card drop" id="pick">
     <div style="font-size:42px">🍽️</div>
     <div>拍一張你的擺盤,從正上方或 45 度角拍效果最好</div>
@@ -179,7 +180,8 @@ async function foodProb(im){try{
 async function gemCheck(im){const k=S.get('gkey','');if(!k)return null;try{
   const b64=draw(im,512).toDataURL('image/jpeg',.7).split(',')[1];
   const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':k},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:'判斷這張照片是否為一盤/一份料理或飲品(人臉、人像、風景、物品都不是)。回 JSON:{"isFood":布林,"category":"main|dessert|salad|rice|drink|other","comment":"繁體中文,60 字內,指出擺盤最大優點與一個具體改法;不是食物就說明照片是什麼"}'}]}],generationConfig:{responseMimeType:'application/json'}})});
-  const j=await r.json();if(!r.ok)return null;return JSON.parse(j.candidates[0].content.parts[0].text)}catch(e){return null}}async function onFile(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const g=await gemCheck(im);let fp=null;if(g){a.gem=g;if(g.isFood===false){a.notFood=true;a.total=Math.min(a.total,12)}}else{fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}}const big=draw(im,1024),thumb=draw(im,240);
+  const j=await r.json();if(!r.ok)return null;return JSON.parse(j.candidates[0].content.parts[0].text)}catch(e){return null}}async function onFile(f){if(!f)return;const ov=$('busy');ov.classList.remove('hide');try{await onFile0(f)}catch(e){alert('分析失敗,請換一張照片再試')}finally{ov.classList.add('hide')}}
+async function onFile0(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const g=await gemCheck(im);let fp=null;if(g){a.gem=g;if(g.isFood===false){a.notFood=true;a.total=Math.min(a.total,12)}}else{fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}}const big=draw(im,1024),thumb=draw(im,240);
   cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
   const h=S.get('hist',[]);if(!a.notFood)h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
 $('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.target.files[0]);
