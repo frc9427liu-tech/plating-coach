@@ -79,7 +79,7 @@ input[type=password],input[type=text],select{width:100%;padding:11px;border-radi
 
 <section id="v3" class="hide">
   <div class="card"><h2>AI 點評(選填)</h2>
-    <p class="small">貼上 Anthropic API key 後,可讓 AI 看照片給更細的建議。key 只存在這支手機的瀏覽器,不會上傳到其他地方。沒設定也能用手機端評分。</p>
+    <p class="small">第二欄貼 Gemini key(免費,推薦)即可讓 AI 看照片給建議;第一欄是 Anthropic key(可不填)。key 只存在這支手機的瀏覽器,不會上傳到其他地方。沒設定也能用手機端評分。</p>
     <input type="password" id="key" placeholder="sk-ant-..." autocomplete="off">
     <input type="password" id="gkey" placeholder="Gemini key(免費,AIza...)" autocomplete="off" style="margin-top:8px"><select id="style"><option value="warm">風格:溫柔鼓勵</option><option value="strict">風格:嚴格主廚</option></select>
     <button class="btn" id="save">儲存</button></div>
@@ -170,6 +170,7 @@ function show(a,src){
   $('aiHint').textContent=S.get('key','')?'':'想要更細的點評?到「設定」貼上 API key。';
   window.scrollTo(0,0);
 }
+async function gemFetch(k,body){const ms=['gemini-flash-latest','gemini-2.5-flash','gemini-2.5-flash-lite','gemini-flash-lite-latest'];let last='';for(let i=0;i<ms.length;i++){try{const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/'+ms[i]+':generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':k},body});const j=await r.json();if(r.ok)return j;last=(j.error&&j.error.message)||r.status;if(![503,429,500,404].includes(r.status))break}catch(e){last=e.message}await new Promise(s=>setTimeout(s,600))}throw new Error(last)}
 let _mn=null;
 function loadScript(u){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
 // 免費的本機 AI(MobileNet):ImageNet 食物相關類別機率總和,載入失敗回傳 null
@@ -179,8 +180,8 @@ async function foodProb(im){try{
   let s=0;for(let i=923;i<=969;i++)s+=p[i];for(const i of [809,659,567,504,849,899,720,813])s+=p[i];return s}catch(e){return null}}// Gemini 免費額度:判斷是否為食物+分類+一句點評;無 key 或失敗回傳 null
 async function gemCheck(im){const k=S.get('gkey','');if(!k)return null;try{
   const b64=draw(im,512).toDataURL('image/jpeg',.7).split(',')[1];
-  const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':k},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:'判斷這張照片是否為一盤/一份料理或飲品(人臉、人像、風景、物品都不是)。回 JSON:{"isFood":布林,"category":"main|dessert|salad|rice|drink|other","comment":"繁體中文,60 字內,指出擺盤最大優點與一個具體改法;不是食物就說明照片是什麼"}'}]}],generationConfig:{responseMimeType:'application/json'}})});
-  const j=await r.json();if(!r.ok)return null;return JSON.parse(j.candidates[0].content.parts[0].text)}catch(e){return null}}async function onFile(f){if(!f)return;const ov=$('busy');ov.classList.remove('hide');try{await onFile0(f)}catch(e){alert('分析失敗,請換一張照片再試')}finally{ov.classList.add('hide')}}
+  const j=await gemFetch(k,JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:'判斷這張照片是否為一盤/一份料理或飲品(人臉、人像、風景、物品都不是)。回 JSON:{"isFood":布林,"category":"main|dessert|salad|rice|drink|other","comment":"繁體中文,60 字內,指出擺盤最大優點與一個具體改法;不是食物就說明照片是什麼"}'}]}],generationConfig:{responseMimeType:'application/json'}}));
+  return JSON.parse(j.candidates[0].content.parts[0].text)}catch(e){return null}}async function onFile(f){if(!f)return;const ov=$('busy');ov.classList.remove('hide');try{await onFile0(f)}catch(e){alert('分析失敗,請換一張照片再試')}finally{ov.classList.add('hide')}}
 async function onFile0(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const g=await gemCheck(im);let fp=null;if(g){a.gem=g;if(g.isFood===false){a.notFood=true;a.total=Math.min(a.total,12)}}else{fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}}const big=draw(im,1024),thumb=draw(im,240);
   cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
   const h=S.get('hist',[]);if(!a.notFood)h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
@@ -193,8 +194,7 @@ $('aiBtn').onclick=async()=>{
   const tone=S.get('style','warm')=='strict'?'嚴格直接的米其林主廚,指出問題但給具體改法':'溫柔鼓勵的料理老師,先肯定再給具體改法';
   const esc=t=>t.split('\n').map(l=>l.trim()?`<p style="margin:6px 0">${l.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</p>`:'').join('');
   if(gk){try{
-    const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent',{method:'POST',headers:{'content-type':'application/json','x-goog-api-key':gk},body:JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:cur.img.split(',')[1]}},{text:`你是${tone}。請用繁體中文評鑑這張擺盤照片(若不是食物請直說)。格式:\n1. 一句總評\n2. 三項優點\n3. 三項最值得改的地方,每項附「下次具體怎麼做」\n4. 給初學者的一個小挑戰練習\n簡潔,不超過 350 字,不要用 markdown 符號。`}]}]})});
-    const j=await r.json();if(!r.ok)throw new Error(j.error?.message||r.status);
+    const j=await gemFetch(gk,JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:cur.img.split(',')[1]}},{text:`你是${tone}。請用繁體中文評鑑這張擺盤照片(若不是食物請直說)。格式:\n1. 一句總評\n2. 三項優點\n3. 三項最值得改的地方,每項附「下次具體怎麼做」\n4. 給初學者的一個小挑戰練習\n簡潔,不超過 350 字,不要用 markdown 符號。`}]}]}));
     $('ai').innerHTML=esc(j.candidates[0].content.parts.map(p=>p.text||'').join(''));return
   }catch(e){$('ai').textContent='AI 點評失敗:'+e.message+'(檢查 Gemini key 與網路)';return}}
   try{
