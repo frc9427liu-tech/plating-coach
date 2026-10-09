@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
@@ -142,8 +142,8 @@ function analyze(im,cat){const P=CATS[cat]||CATS.other;
   const dims={color,contrast,balance,whitespace,detail,clean};
   const w=P.w,raw=color*w.color+contrast*w.contrast+balance*w.balance+whitespace*w.whitespace+detail*w.detail+clean*w.clean;
   // 嚴格曲線 + 整潔度太低時封頂,避免亂的盤子拿高分
-  let total=Math.round(100*Math.pow(raw/100,1.5));if(clean<50)total=Math.min(total,Math.round(30+clean*.6));const skinF=skin/(W*H),notFood=skinF>.5;if(notFood)total=Math.min(total,12);
-  return{cat,notFood,dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/N,darkF,brownF,brightF,edgeAvg}};
+  let total=Math.round(100*Math.pow(raw/100,1.5));if(clean<50)total=Math.min(total,Math.round(30+clean*.6));const skinF=skin/(W*H),notFood=skinF>.5,rawTotal=total;if(notFood)total=Math.min(total,12);
+  return{cat,notFood,rawTotal,dims:Object.fromEntries(Object.entries(dims).map(([k,v])=>[k,Math.round(v)])),total,pal,m:{hueBins,sd,off,space,mean,sat:satN/N,darkF,brownF,brightF,edgeAvg}};
 }
 const NAMES={color:'色彩豐富',contrast:'明暗對比',balance:'重心平衡',whitespace:'留白呼吸',detail:'細節層次',clean:'整潔乾淨'};
 function advice(a){
@@ -182,7 +182,7 @@ async function gemCheck(im){const k=S.get('gkey','');if(!k)return null;try{
   const b64=draw(im,512).toDataURL('image/jpeg',.7).split(',')[1];
   const j=await gemFetch(k,JSON.stringify({contents:[{parts:[{inline_data:{mime_type:'image/jpeg',data:b64}},{text:'判斷這張照片是否為一盤/一份料理或飲品(人臉、人像、風景、物品都不是)。回 JSON:{"isFood":布林,"category":"main|dessert|salad|rice|drink|other","comment":"繁體中文,60 字內,指出擺盤最大優點與一個具體改法;不是食物就說明照片是什麼"}'}]}],generationConfig:{responseMimeType:'application/json'}}));
   return JSON.parse(j.candidates[0].content.parts[0].text)}catch(e){return null}}async function onFile(f){if(!f)return;const ov=$('busy');ov.classList.remove('hide');try{await onFile0(f)}catch(e){alert('分析失敗,請換一張照片再試')}finally{ov.classList.add('hide')}}
-async function onFile0(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const g=await gemCheck(im);let fp=null;if(g){a.gem=g;if(g.isFood===false){a.notFood=true;a.total=Math.min(a.total,12)}}else{fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}}const big=draw(im,1024),thumb=draw(im,240);
+async function onFile0(f){if(!f)return;const im=await load(f);const a=analyze(im,CAT);const g=await gemCheck(im);let fp=null;if(g){a.gem=g;if(g.isFood===true&&a.notFood){a.notFood=false;a.total=a.rawTotal}if(g.isFood===false){a.notFood=true;a.total=Math.min(a.total,12)}}else{fp=await foodProb(im);a.fp=fp;if(fp!==null&&fp>=.15&&a.notFood){a.notFood=false;a.total=a.rawTotal}if(fp!==null&&fp<.15){a.notFood=true;a.total=Math.min(a.total,12)}}const big=draw(im,1024),thumb=draw(im,240);
   cur={a,img:big.toDataURL('image/jpeg',.8)};show(a,cur.img);
   const h=S.get('hist',[]);if(!a.notFood)h.push({t:Date.now(),c:CAT,s:a.total,th:thumb.toDataURL('image/jpeg',.6)});S.set('hist',h.slice(-60));}
 $('cam').onchange=e=>onFile(e.target.files[0]);$('lib').onchange=e=>onFile(e.target.files[0]);
